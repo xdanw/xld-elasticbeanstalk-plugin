@@ -12,8 +12,9 @@
 from elasticbeanstalk import create_session
 from elasticbeanstalk.array_utils import ArrayUtil as arr
 from boto3.session import Session
+from botocore.config import Config
+import urllib
 import time
-
 
 class EBClient(object):
     def __init__(self, access_key, access_secret, eb_app_env):
@@ -21,8 +22,27 @@ class EBClient(object):
         self.session = Session(aws_access_key_id=access_key,
                                aws_secret_access_key=access_secret,
                                botocore_session=create_session())
-        self.eb_client = self.session.client('elasticbeanstalk', region_name=eb_app_env.region)
-        self.s3_client = self.session.client('s3', region_name=eb_app_env.region)
+        # self.eb_client = self.session.client('elasticbeanstalk', region_name=eb_app_env.region)
+        # self.s3_client = self.session.client('s3', region_name=eb_app_env.region)
+        
+        # Based on: xld-aws-plugin create_config(container):
+        config = None
+        if eb_app_env.account.proxyHost and eb_app_env.account.proxyProtocol and eb_app_env.account.proxyPort:
+            proxy = "{}:{}".format(eb_app_env.account.proxyHost, eb_app_env.account.proxyPort)
+            if eb_app_env.account.proxyUser and eb_app_env.account.proxyPassword:
+                proxy = "{}:{}@{}".format(urllib.quote(eb_app_env.account.proxyUser), urllib.quote(eb_app_env.account.proxyPassword),
+                                          proxy)
+            proxy = "{}://{}".format(eb_app_env.account.proxyProtocol, proxy)
+            proxies = {'https': proxy, 'http': proxy}
+            config = Config(proxies=proxies)
+        
+        # Based on: xld-aws-plugin get_aws_client(self, region, resource_name='ec2'):
+        if not self.eb_app_env.account.verifySSL: 
+            self.eb_client = self.session.client('elasticbeanstalk', region_name=eb_app_env.region, verify=False, config=config)
+            self.s3_client = self.session.client('s3', region_name=eb_app_env.region, verify=False, config=config)
+        else: 
+            self.eb_client = self.session.client('elasticbeanstalk', region_name=eb_app_env.region, config=config)
+            self.s3_client = self.session.client('s3', region_name=eb_app_env.region, config=config)
 
     @staticmethod
     def new_instance(eb_app_env_ci):
